@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:cm="http://aries.apache.org/blueprint/xmlns/blueprint-cm/v1.1.0"
+	xsi:schemaLocation="http://www.osgi.org/xmlns/blueprint/v1.0.0 
+	                    https://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd 
+			    http://aries.apache.org/blueprint/xmlns/blueprint-cm/v1.1.0 http://aries.apache.org/schemas/blueprint-cm/blueprint-cm-1.1.0.xsd
+	                    http://camel.apache.org/schema/blueprint http://camel.apache.org/schema/blueprint/camel-blueprint.xsd">
+
+
+			    <!-- It configures queue by making connection Factory-->
+
+			      <bean id="jmsConnectionFactory" class="org.apache.activemq.ActiveMQConnectionFactory">
+	    <property name="brokerURL" value="failover:(tcp://localhost:61616)"/>
+         <!-- <property name="brokerURL" value="tcp://localhost:61616"/>-->
+	 	   <property name="userName" value="admin"/>
+	   <property name="password" value="admin"/>
+   </bean>
+  <bean id="pooledConnectionFactory" class="org.apache.activemq.pool.PooledConnectionFactory"
+        init-method="start" destroy-method="stop">
+        <property name="maxConnections" value="6" />
+        <property name="connectionFactory" ref="jmsConnectionFactory" />
+</bean> 
+
+<!-- It is JMS-Component and can be used for any JMS-provider-->
+
+<!-- <bean id="jms" class="org.apache.camel.component.jms.JmsComponent">
+     <property name="connectionFactory">
+        <bean class="org.apache.activemq.ActiveMQConnectionFactory">
+        <property name="brokerURL" value="tcp://localhost:61616?broker.persistent=false" />
+        <property name="userName" value="admin"/>
+        <property name="password" value="admin"/>
+        </bean>
+        </property>
+</bean>-->
+  
+
+    <!-- It is ActiveMQComponent without connection factory-->
+
+    <!-- <bean id="activemq" class="org.apache.activemq.camel.component.ActiveMQComponent">
+        <property name="brokerURL" value="tcp://localhost:61616" />
+        <property name="userName" value="admin"/>
+           <property name="password" value="admin"/>
+    </bean>-->
+
+    <cm:property-placeholder id="cfg2" persistent-id="apidb" update-strategy="reload">
+                                        <cm:default-properties>
+                                                <cm:property name="amq_name" value="artemis-queue"/>
+                                                <cm:property name="apiport" value="8080"/>
+                                       </cm:default-properties>
+                                </cm:property-placeholder>
+
+        <camelContext id="cbr-example-context" xmlns="http://camel.apache.org/schema/blueprint" streamCache="true">
+
+		 <dataFormats><json id="jsonOrder" library="Jackson"/></dataFormats>
+
+
+	    <route id="cbr-route">
+		    <from uri="restlet:http://localhost:{{apiport}}/api/getfirstdetails?restletMethod=POST"/>
+
+	    <unmarshal ref="jsonOrder"/>
+
+	    <log id="_log2" message="The Hit recieved at ${date:now:yyyy-MM-dd HH:mm:ss} and the input passed is ${body}"/>
+	  <setHeader headerName="CamelFileName"><simple>${body[filename]}</simple></setHeader>
+	  
+	  <setBody><simple>Hello Prasoon!Data is going for Queue</simple></setBody>
+	  <log message="Data is going for queue and FileName is ${header.CamelFileName}"/>
+	  <!-- This is used for Inonly pattern not wait for reply-->
+	  <!--<to uri="activemq:camel.q.timer" pattern="InOnly"/>-->
+	  <to uri="activemq:amq_name?testConnectionOnStartup" pattern="InOut" />
+	  <log message="Data successfully transferred to Queue "/>
+  </route>
+   <route>
+	   <!--Here use of concurrentConsumers is use to make more than one message consumable at one time and asyncConsumer is used for starting the processing of second message without waiting for first message to be totally completed-->
+	  <from uri="activemq:amq_name?asyncConsumer=true&amp;concurrentConsumers=10"/>
+	  
+	  <log message="Data Successfully Picked from Queue"/>
+	  <to id="_to4" uri="file:///home/prasoon/workspace1/FirstProject/work/cbr/output/others/"/>
+	  <log message="Data successfully transferred to new location"/>
+	  <log message="File name is ${file:name} ** and File Contents is ::: ${body} "/>
+	  <removeHeaders pattern="*" excludePattern="CamelFileName"/>
+	    <setBody><simple>{"filename generated":"${file:name}"}</simple></setBody>
+	    <setHeader headerName="Content-Type" > <simple> application/json</simple></setHeader>
+	    <setHeader headerName="CamelRestletResponse"><simple>${body}</simple></setHeader>
+
+
+			 
+    </route>
+    </camelContext>
+</blueprint>
